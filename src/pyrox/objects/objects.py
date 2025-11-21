@@ -18,6 +18,16 @@ class Event(BaseModel):
     # the link to the event page
     url: HttpUrl
 
+    @property
+    def canonical_name(self) -> str:
+        """Get the canonical name for the event."""
+        return Event.canonicalize(self.name)
+
+    @staticmethod
+    def canonicalize(name: str) -> str:
+        """Canonicalize an event name."""
+        return "_".join(name.lower().removeprefix("hyrox").strip().split())
+
 
 class DivisionName(StrEnum):
     """An enumeration over Hyrox divisions."""

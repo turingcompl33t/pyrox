@@ -31,7 +31,7 @@ class DivisionScraper(BaseScraper):
 
         # the first row is the table header
         divisions: list[Division] = []
-        for row in rows:
+        for row in rows[1:]:
             try:
                 divisions.append(_parse_row(row))
             except (ValueError, ValidationError):
