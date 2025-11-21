@@ -1,27 +1,28 @@
 import logging
 import sys
 
+import humanize
+
 import pyrox.models as models
 from pyrox.client import Hyrox
 
 
 def main() -> int:
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.ERROR)
 
     client = Hyrox()
 
-    # get divisions for chicago 2025
-    divisions = client.divisions("chicago_2025")
+    # get elite men for chicago 2025
+    elite_men = client.division("chicago_2025", models.DivisionName.ELITE_MEN)
+    assert elite_men is not None
 
-    # find the elite men
-    elite_men = [d for d in divisions if d.model.name == models.DivisionName.ELITE_MEN][
-        0
-    ]
+    # find rich in rankings
+    rich = elite_men.ranking("Rich Ryan")
+    assert rich is not None
 
-    # get the rankings
-    rankings = elite_men.rankings()
-    for r in rankings:
-        print(r.model_dump_json(indent=2))
+    # get race data for rich
+    result = rich.result(retry=16)
+    print(humanize.precisedelta(result.model.total_time))
 
     return 0
 

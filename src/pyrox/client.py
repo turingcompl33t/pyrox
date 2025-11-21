@@ -5,6 +5,7 @@ Hyrox results client.
 from __future__ import annotations
 
 import logging
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -14,6 +15,7 @@ import pyrox.models as models
 from pyrox.scrapers.division import DivisionScraper
 from pyrox.scrapers.event import EventScraper
 from pyrox.scrapers.ranking import RankingScraper
+from pyrox.scrapers.result import ResultScraper
 
 
 class Event(BaseModel):
@@ -67,12 +69,54 @@ class Division(BaseModel):
 
         return rankings
 
+    def ranking(self, athlete: str) -> Ranking | None:
+        """
+        Find the ranking for a specific athlete.
+        :param athlete: The name of the athlete
+        :return: The ranking for the athlete, or `None`
+        """
+        rankings = self.rankings()
+        found = [r for r in rankings if r.model.name.lower() == athlete.lower()]
+        # TODO(Kyle): what if multiple?
+        return found[0] if len(found) > 0 else None
+
 
 class Ranking(BaseModel):
     """A Hyrox ranking."""
 
     # ranking data model
     model: models.Ranking
+
+    def result(self, retry: int = 5) -> Result:
+        """
+        Get the result associated with the ranking.
+        :param retry: Number of retries
+        """
+        for _ in range(retry):
+            try:
+                return self._try_get_result()
+            except ValueError:
+                time.sleep(1)
+                continue
+
+        raise RuntimeError("maximum retries exceeded when querying result")
+
+    def _try_get_result(self) -> Result:
+        """Try and query a result."""
+        # grab the page
+        res = requests.get(f"{self.model.url}?tab=splits")
+
+        # scrape the content
+        scraper = ResultScraper(logging.getLogger(__name__))
+        result = scraper.scrape(BeautifulSoup(res.content, "html.parser"))
+        return Result(model=result)
+
+
+class Result(BaseModel):
+    """A Hyrox result."""
+
+    # result data model
+    model: models.Result
 
 
 class Hyrox:
@@ -116,3 +160,17 @@ class Hyrox:
             raise ValueError(f"event with name {event_name} not found")
 
         return event.divisions()
+
+    def division(
+        self, event_name: str, division_name: models.DivisionName
+    ) -> Division | None:
+        """
+        Get a specific division from an event. Return `None` if not found.
+        :param event_name: The event name
+        :param division_name: The division name
+        :return: The division, or `None`
+        """
+        divisions = self.divisions(event_name)
+        found = [d for d in divisions if d.model.name == division_name]
+        # TODO(Kyle): what if multiple?
+        return found[0] if len(found) > 0 else None

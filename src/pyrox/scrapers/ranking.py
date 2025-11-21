@@ -96,16 +96,3 @@ def _parse_link(tag: Tag) -> HttpUrl:
     if a is None:
         raise ValueError("failed to find anchor tag")
     return HttpUrl(f"{BASE_URL}{a['href']}")
-
-
-# def _parse_n_finishers(tag: Tag) -> int:
-#     """Parse the number of finishers from the tag in which it appears."""
-#     return int(tag.text.strip())
-
-
-# def _parse_link(tag: Tag) -> HttpUrl:
-#     """Parse the results URL from the tag in which it appears."""
-#     a = tag.find("a")
-#     if a is None:
-#         raise ValueError("missing anchor tag")
-#     return HttpUrl(f"{BASE_URL}{a['href']}")
