@@ -8,13 +8,13 @@ from bs4 import BeautifulSoup, Tag
 from pydantic import HttpUrl, ValidationError
 
 from pyrox.config import BASE_URL
-from pyrox.objects import Division, DivisionName
+from pyrox.models import Division, DivisionName
 
 from .base import BaseScraper
 
 
 class DivisionScraper(BaseScraper):
-    """A class for scraping events."""
+    """A class for scraping divisions."""
 
     def __init__(self, logger: logging.Logger) -> None:
         super().__init__(logger)

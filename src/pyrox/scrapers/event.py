@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup, Tag
 from pydantic import HttpUrl
 
 from pyrox.config import BASE_URL
-from pyrox.objects import Event
+from pyrox.models import Event
 from pyrox.parsers.date import DateParser
 
 from .base import BaseScraper
