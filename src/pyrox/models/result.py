@@ -109,3 +109,5 @@ class Result(BaseModel):
 
     # the splits for the race, if available / requested
     splits: Splits | None = None
+    # the athlete profile URL, if available / requested
+    profile: HttpUrl | None = None

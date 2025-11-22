@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
+from pydantic import HttpUrl
 
 import pyrox.models as models
+from pyrox.config import BASE_URL
 from pyrox.scrapers.division import DivisionScraper
 from pyrox.scrapers.event import EventScraper
 from pyrox.scrapers.result import ResultScraper
@@ -23,9 +26,13 @@ class Hyrox:
     def __init__(self, logger: logging.Logger = logging.getLogger(__name__)) -> None:
         self.logger = logger
 
-    def events(self) -> list[Event]:
+    def events(
+        self, *, after: datetime | None = None, before: datetime | None = None
+    ) -> list[Event]:
         """
-        Get all events.
+        Get all events, with an optional date range.
+        :param: after: The beginning of the date range
+        :param before: The end of the date range
         :return: A list of events
         """
         self.logger.info("fetching all events")
@@ -38,8 +45,15 @@ class Hyrox:
             Event(e, self.logger)
             for e in scraper.scrape(BeautifulSoup(res.content, "html.parser"))
         ]
-        self.logger.info(f"found '{len(events)}' events")
 
+        self.logger.info(f"found {len(events)} events")
+
+        if after is not None:
+            events = [e for e in events if e.model.date > after]
+        if before is not None:
+            events = [e for e in events if e.model.date < before]
+
+        self.logger.info(f"filtered to {len(events)} with date constraints")
         return events
 
     def event(self, name: str) -> Event:
@@ -68,12 +82,16 @@ class Event:
         self.logger = logger
 
     def results(
-        self, division_name: models.DivisionName, splits: bool = False
+        self,
+        division_name: models.DivisionName,
+        splits: bool = False,
+        profile: bool = False,
     ) -> list[Result]:
         """
         Get the results from an event for the specified division.
         :param division: The name of the division
         :param splits: Enrich results with detailed splits data
+        :param profile: Enrich results with athlete profile URLs
         :return: The collection of results
         """
         self.logger.info(
@@ -91,7 +109,14 @@ class Event:
         if splits:
             self.logger.info("fetching splits for all results...")
             for result in results:
+                self.logger.debug(f"fetching splits for '{result.model.name}'")
                 result.model.splits = _get_splits_for_result(result)
+
+        if profile:
+            self.logger.info("fetching profile URLs for all results...")
+            for result in results:
+                self.logger.debug(f"fetching profile URL for '{result.model.name}'")
+                result.model.profile = _get_profile_for_result(result)
 
         return results
 
@@ -100,12 +125,14 @@ class Event:
         division_name: models.DivisionName,
         athlete_name: str,
         splits: bool = False,
+        profile: bool = False,
     ) -> Result:
         """
         Get the results from an event for the specified division and athlete.
         :param division_name: The name of the division
         :param athlete_name: The name of the athlete
         :param splits: Enrich results with detailed splits data
+        :param profiles: Enrich results with athlete profile URLs
         :raises: ValueError: If athlete is not found
         :return: The result
         """
@@ -120,8 +147,12 @@ class Event:
         self.logger.info(f"found result for athlete '{athlete_name}'")
 
         if splits:
-            self.logger.info(f"fetching splits for athlete '{athlete_name}'...")
+            self.logger.info(f"fetching splits for athlete '{athlete_name}'")
             result.model.splits = _get_splits_for_result(result)
+
+        if profile:
+            self.logger.info(f"fetching profile URL for athlete '{athlete_name}'")
+            result.model.profile = _get_profile_for_result(result)
 
         return result
 
@@ -190,6 +221,23 @@ def _try_get_splits(r: Result) -> models.Splits:
     # scrape the content
     scraper = SplitsScraper(logging.getLogger(__name__))
     return scraper.scrape(BeautifulSoup(res.content, "html.parser"))
+
+
+def _get_profile_for_result(r: Result) -> HttpUrl:
+    """
+    Get the profile URL for a specified result.
+    :param r: The result
+    :return: The profile URL
+    """
+    res = requests.get(f"{r.model.url}?tab=overview")
+    res.raise_for_status()
+
+    soup = BeautifulSoup(res.content, "html.parser")
+    matches = [a["href"] for a in soup.find_all("a") if "/athlete/" in a["href"]]
+    if len(matches) == 0:
+        raise RuntimeError("could not locate athlete profile URL")
+
+    return HttpUrl(f"{BASE_URL}{matches[0]}")
 
 
 class Result:

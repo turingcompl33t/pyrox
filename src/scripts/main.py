@@ -1,5 +1,6 @@
 import logging
 import sys
+from datetime import datetime
 from typing import Any
 
 import pyrox.models as models
@@ -26,7 +27,14 @@ def _create_logger(name: str = "pyrox", level: Any = logging.ERROR) -> logging.L
 
 
 def main() -> int:
-    client = Hyrox(_create_logger(level=logging.INFO))
+    client = Hyrox(_create_logger(level=logging.DEBUG))
+
+    # get events in 24/25 season (roughly)
+    events = client.events(
+        after=datetime(day=1, month=7, year=2024),
+        before=datetime(day=1, month=7, year=2025),
+    )
+    print(len(events))
 
     # get the chicago event
     chicago = client.event("chicago_2025")
@@ -39,14 +47,6 @@ def main() -> int:
     rich = chicago.result(models.DivisionName.ELITE_MEN, "Rich Ryan", splits=True)
     assert rich.model.splits is not None
     print(rich.model.splits.pretty())
-
-    # # find rich in rankings
-    # rich = elite_men.ranking("Rich Ryan")
-    # assert rich is not None
-
-    # # get race data for rich
-    # result = rich.result(retry=16)
-    # print(humanize.precisedelta(result.model.total_time))
 
     return 0
 
