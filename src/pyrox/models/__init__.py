@@ -1,13 +1,12 @@
 from .division import Division, DivisionName
 from .event import Event
-from .ranking import AgeGroup, Ranking
-from .result import Result, Station
+from .result import AgeGroup, Result, Splits, Station
 
 __all__ = [
     "Event",
     "Division",
     "DivisionName",
-    "Ranking",
+    "Splits",
     "AgeGroup",
     "Result",
     "Station",

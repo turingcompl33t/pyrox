@@ -1,79 +1,98 @@
 """
-Result scraper.
+Scrape ranking information from the ranking page.
 """
 
 import logging
 from datetime import timedelta
 
 from bs4 import BeautifulSoup, Tag
+from pydantic import HttpUrl, ValidationError
 
-from pyrox.models import Result, Station
+from pyrox.config import BASE_URL
+from pyrox.models import AgeGroup, Result
 
 from .base import BaseScraper
 
 
 class ResultScraper(BaseScraper):
-    """A class for scraping results from an individual analysis page."""
+    """A class for scraping results from an individual race."""
 
     def __init__(self, logger: logging.Logger) -> None:
         super().__init__(logger)
 
-    def scrape(self, soup: BeautifulSoup) -> Result:
+    def scrape(self, soup: BeautifulSoup) -> list[Result]:
         """
-        Scrape and parse a result.
-        :return: The parsed result
+        Scrape and parse Result.
+        :return: The collection of Result
         """
         # find all of the row elements
-        rows = soup.find_all("tr", class_="border-b")
-        if len(rows) != 31:
-            raise ValueError("unexpected number of rows in splits table")
+        rows = soup.find_all("tr", class_="border-t")
+        if len(rows) < 2:
+            return []
 
-        # the run splits, in order
-        run_splits: list[timedelta] = []
-        # the station splits, in order
-        station_splits: list[timedelta] = []
-
-        # skip the first row (roxzone in)
-        run: bool = True
-        for row in rows[1:]:
-            split, is_roxzone = _parse_row(row)
-            if is_roxzone:
+        rankings: list[Result] = []
+        for row in rows:
+            try:
+                rankings.append(_parse_row(row))
+            except (ValueError, ValidationError):
+                self.logger.warning("failed to parse ranking from row")
                 continue
-
-            if run:
-                run_splits.append(split)
-            else:
-                station_splits.append(split)
-
-            # toggle the flag
-            run = not run
-
-        if len(run_splits) != 8 or len(station_splits) != 8:
-            raise ValueError("failed to parse all data")
-
-        return Result(
-            run_splits=run_splits,
-            stations={name: split for name, split in zip(Station, station_splits)},
-        )
+        return rankings
 
 
-def _parse_row(tag: Tag) -> tuple[timedelta, bool]:
+def _parse_row(tag: Tag) -> Result:
     """
-    Parse a row.
-    :return: (split parsed from the row, roxzone)
+    Parse a ranking from a row of the page.
+    :param tag: The input tag
+    :return: The parsed ranking
     """
-    parts = tag.find_all("td")
-    if len(parts) < 1:
-        raise ValueError("failed to parse")
+    data = tag.find_all("td")
 
-    name: str = parts[0].text
-    if "roxzone" in name.lower():
-        return timedelta(seconds=0), True
+    if len(data) != 7:
+        raise ValueError("cannot parse division from row; missing data")
 
-    diff: list[str] = parts[-1].text.split(":")
-    diff = ["0"] + diff if len(diff) < 3 else diff
-
-    return (
-        timedelta(hours=int(diff[0]), minutes=int(diff[1]), seconds=int(diff[2])),
-        False,
+    return Result(
+        position=int(data[1].text),
+        position_ag=_parse_position_nullable(data[2]),
+        name=_parse_name(data[3]),
+        age_group=_parse_age_group(data[4]),
+        time=_parse_time(data[5]),
+        url=_parse_link(data[6]),
     )
+
+
+def _parse_position_nullable(tag: Tag) -> int | None:
+    """Parse the ranking position which may be unparsable."""
+    try:
+        return int(tag.text)
+    except ValueError:
+        return None
+
+
+def _parse_name(tag: Tag) -> str:
+    """Parse athlete name from the tag in which it appears."""
+    return tag.text
+
+
+def _parse_age_group(tag: Tag) -> AgeGroup | None:
+    """Parse athlete age group from the tag in which it appears."""
+    text: str = tag.text
+    try:
+        return AgeGroup(text.replace("-", "_"))
+    except ValueError:
+        return None
+
+
+def _parse_time(tag: Tag) -> timedelta:
+    """Parse finish time from the tag in which it appears."""
+    parts: list[str] = tag.text.split(":")
+    parts = ["0"] + parts if len(parts) < 3 else parts
+    return timedelta(hours=int(parts[0]), minutes=int(parts[1]), seconds=int(parts[2]))
+
+
+def _parse_link(tag: Tag) -> HttpUrl:
+    """Parse the link to race analysis from the tag in which it appears."""
+    a = tag.find("a")
+    if a is None:
+        raise ValueError("failed to find anchor tag")
+    return HttpUrl(f"{BASE_URL}{a['href']}")
