@@ -1,57 +1,24 @@
 import logging
 import sys
-from typing import Any
+from pathlib import Path
 
 import pyrox.models as models
 from pyrox.client import Hyrox
-
-
-def _create_logger(name: str = "pyrox", level: Any = logging.ERROR) -> logging.Logger:
-    """
-    Create a logger for the miner instance.
-    :param name: The name of the logger
-    :param verbosity: The requested verbosity level
-    :return: The logger
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-
-    # create a console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    ch.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-
-    logger.addHandler(ch)
-    return logger
+from pyrox.jobs.loader import MultiEventLoader
+from pyrox.logging import create_logger
 
 
 def main() -> int:
-    client = Hyrox(_create_logger(level=logging.DEBUG))
+    client = Hyrox(create_logger(level=logging.DEBUG))
 
-    # # get events in 24/25 season (roughly)
-    # events = client.events(
-    #     after=datetime(day=1, month=7, year=2024),
-    #     before=datetime(day=1, month=7, year=2025),
-    # )
-    # print(len(events))
-
-    # # get the chicago event
-    # chicago = client.event("chicago_2025")
-
-    # # get elite men's race
-    # results = chicago.results(models.DivisionName.ELITE_MEN)
-    # print(len(results))
-
-    # # get Rich's results
-    # rich = chicago.result(models.DivisionName.ELITE_MEN, "Rich Ryan", splits=True)
-    # assert rich.model.splits is not None
-    # print(rich.model.splits.pretty())
-
-    # get results for chicago
-    results = client.results(
-        "chicago_2025", models.DivisionName.ELITE_MEN, splits=True, profile=True
+    loader = MultiEventLoader(client)
+    loader.load(
+        {"chicago_2025", "glasgow_2025"},
+        {models.DivisionName.ELITE_MEN},
+        Path.cwd() / "results.csv",
+        splits=True,
+        profile=True,
     )
-    print(len(results))
 
     return 0
 
