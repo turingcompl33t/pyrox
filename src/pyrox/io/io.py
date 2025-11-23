@@ -1,11 +1,34 @@
 """
-Results writer.
+Results I/O.
 """
 
 import csv
+from datetime import timedelta
 from pathlib import Path
 
+from pydantic import HttpUrl
+
 import pyrox.models as models
+
+
+class ResultsReader:
+    """A simple reader for results."""
+
+    def __init__(self) -> None:
+        pass
+
+    def read(self, path: Path) -> list[tuple[str, models.DivisionName, models.Result]]:
+        """
+        Read results from the file at `path`.
+        :param path: The path to the saved results file
+        :return: The list of results
+        """
+        if not path.is_file():
+            raise ValueError(f"file at path {path} not found")
+
+        with path.open("r") as f:
+            reader = csv.DictReader(f)
+            return [_read_row(row) for row in reader]
 
 
 class ResultsWriter:
@@ -63,6 +86,8 @@ def _write_header() -> list[str]:
             "event_name",
             "division_name",
             "athlete_name",
+            "athlete_canonical_name",
+            "athlete_profile_url",
             "age_group",
             "position",
             "position_ag",
@@ -72,7 +97,65 @@ def _write_header() -> list[str]:
         ]
         + headers_splits_run
         + header_splits_station
-        + ["has_profile", "profile_url"]
+    )
+
+
+def _read_row(row: dict[str, str]) -> tuple[str, models.DivisionName, models.Result]:
+    """
+    Deserialize data from a row.
+    :param row: The row data
+    :return: (event name, division name, deserialized result)
+    """
+    return (
+        row["event_name"],
+        models.DivisionName(row["division_name"]),
+        _row_to_result(row),
+    )
+
+
+def _row_to_result(row: dict[str, str]) -> models.Result:
+    """
+    Read row data to a result.
+    :param row: Row data
+    :return: Deserialized result
+    """
+    athlete = models.AthleteRef(
+        name=row["athlete_name"],
+        canonical_name=(
+            row["athlete_canonical_name"]
+            if row["athlete_canonical_name"] != "unknown"
+            else None
+        ),
+        profile_url=(
+            HttpUrl(row["athlete_profile_url"])
+            if row["athlete_profile_url"] != "unknown"
+            else None
+        ),
+    )
+
+    splits = (
+        models.Splits(
+            runs=[timedelta(seconds=int(row[f"run_{i + 1}"])) for i in range(8)],
+            stations={
+                name: timedelta(seconds=int(row[name])) for name in models.Station
+            },
+        )
+        if bool(row["has_splits"])
+        else None
+    )
+
+    return models.Result(
+        athlete=athlete,
+        position=int(row["position"]),
+        position_ag=(
+            int(row["position_ag"]) if row["position_ag"] != "unknown" else None
+        ),
+        age_group=(
+            models.AgeGroup(row["age_group"]) if row["age_group"] != "unknown" else None
+        ),
+        time=timedelta(seconds=int(row["finish_time"])),
+        url=HttpUrl(row["analysis_url"]),
+        splits=splits,
     )
 
 
@@ -113,10 +196,22 @@ def _result_to_row(r: models.Result) -> list[str]:
         else [str(0)] * 8
     )
 
-    # name, ag, position, position_ag, finish_time, analysis_url, has_splits, ...run_splits..., ...station_splits..., has_profile, profile
+    # athlete_name, athlete_canonical_name, athlete_profile_url,
+    # ag, position, position_ag, finish_time,
+    # has_splits, ...run_splits..., ...station_splits...
     return (
         [
-            r.name,
+            r.athlete.name,
+            (
+                r.athlete.canonical_name
+                if r.athlete.canonical_name is not None
+                else "unknown"
+            ),
+            (
+                str(r.athlete.profile_url)
+                if r.athlete.profile_url is not None
+                else "unknown"
+            ),
             str(r.age_group) if r.age_group is not None else "unknown",
             str(r.position),
             str(r.position_ag) if r.position_ag is not None else "unknown",
@@ -126,8 +221,4 @@ def _result_to_row(r: models.Result) -> list[str]:
         ]
         + run_splits
         + station_splits
-        + [
-            "true" if r.profile is not None else "false",
-            str(r.profile) if r.profile is not None else "n/a",
-        ]
     )

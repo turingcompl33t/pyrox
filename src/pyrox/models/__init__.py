@@ -1,6 +1,6 @@
 from .division import Division, DivisionName
 from .event import Event
-from .result import AgeGroup, Result, Splits, Station
+from .result import AgeGroup, AthleteRef, Result, Splits, Station
 
 __all__ = [
     "Event",
@@ -9,5 +9,6 @@ __all__ = [
     "Splits",
     "AgeGroup",
     "Result",
+    "AthleteRef",
     "Station",
 ]

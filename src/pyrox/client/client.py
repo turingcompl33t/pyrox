@@ -5,7 +5,9 @@ Hyrox results client.
 from __future__ import annotations
 
 import logging
+import os
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 
 import requests
@@ -77,8 +79,8 @@ class Hyrox:
         self,
         event_name: str,
         division_name: models.DivisionName,
+        athlete: bool = False,
         splits: bool = False,
-        profile: bool = False,
         retry: int = 8,
         poll_interval: timedelta = timedelta(seconds=1),
     ) -> list[Result]:
@@ -86,14 +88,14 @@ class Hyrox:
         Get results for the specified division at the specified event.
         :param event_name: The name of the event
         :param division_name: The name of the division
+        :param athlete: Enrich results with athlete profile data
         :param splits: Enrich results with detailed splits data
-        :param profile: Enrich results with athlete profile URLs
         :param retry: The number of retries for operations
         :param poll_interval: The poll interval for operations
         :return: The collection of results
         """
         event = self.event(event_name)
-        return event.results(division_name, splits, profile, retry, poll_interval)
+        return event.results(division_name, athlete, splits, retry, poll_interval)
 
 
 class Event:
@@ -106,16 +108,16 @@ class Event:
     def results(
         self,
         division_name: models.DivisionName,
+        athlete: bool = False,
         splits: bool = False,
-        profile: bool = False,
         retry: int = 8,
         poll_interval: timedelta = timedelta(seconds=1),
     ) -> list[Result]:
         """
         Get the results from an event for the specified division.
         :param division: The name of the division
+        :param athlete: Enrich results with athlete profile data
         :param splits: Enrich results with detailed splits data
-        :param profile: Enrich results with athlete profile URLs
         :param retry: The number of retries for operations
         :param poll_interval: The poll interval for operations
         :return: The collection of results
@@ -132,17 +134,17 @@ class Event:
         results = division.results()
         self.logger.info(f"fetched {len(results)} results for division")
 
-        if splits or profile:
+        if splits or athlete:
             enricher = ResultEnricher(retry, poll_interval, self.logger)
             for i, result in enumerate(results):
                 self.logger.info(
-                    f"[{i + 1} / {len(results)}] enriching result for athlete '{result.model.name}'"
+                    f"[{i + 1} / {len(results)}] enriching result for athlete '{result.model.athlete.name}'"
                 )
                 try:
-                    result = enricher.enrich(result, splits, profile)
+                    result = enricher.enrich(result, athlete, splits)
                 except RuntimeError as e:
                     self.logger.warning(
-                        f"failed to enrich result for athlete '{result.model.name}': {e}"
+                        f"failed to enrich result for athlete '{result.model.athlete.name}': {e}"
                     )
                     continue
 
@@ -152,8 +154,8 @@ class Event:
         self,
         division_name: models.DivisionName,
         athlete_name: str,
+        athlete: bool = False,
         splits: bool = False,
-        profile: bool = False,
         retry: int = 8,
         poll_interval: timedelta = timedelta(seconds=1),
     ) -> Result:
@@ -161,8 +163,8 @@ class Event:
         Get the results from an event for the specified division and athlete.
         :param division_name: The name of the division
         :param athlete_name: The name of the athlete
+        :param athlete: Enrich results with athlete profile data
         :param splits: Enrich results with detailed splits data
-        :param profiles: Enrich results with athlete profile URLs
         :param retry: The number of retries for operations
         :param poll_interval: The poll interval for operations
         :raises: ValueError: If athlete is not found
@@ -179,7 +181,7 @@ class Event:
         self.logger.info(f"found result for athlete '{athlete_name}'")
 
         enricher = ResultEnricher(retry, poll_interval, self.logger)
-        return enricher.enrich(result, splits, profile) if splits or profile else result
+        return enricher.enrich(result, athlete, splits) if splits or athlete else result
 
     def _division(self, name: models.DivisionName) -> _Division:
         """
@@ -230,19 +232,19 @@ class ResultEnricher:
         # logger instance
         self.logger = logger
 
-    def enrich(self, r: Result, splits: bool, profile: bool) -> Result:
+    def enrich(self, r: Result, athlete: bool, splits: bool) -> Result:
         """
         Enrich a result with splits and profile data.
         :param r: The result
+        :param athlete: Indicates athlete should be included
         :param splits: Indicates splits should be included
-        :param profile: Indicates profile URL should be included
         :raises: RuntimeError if maximum retries exceeded
         :return: The enriched result
         """
         if splits:
             r.model.splits = self._get_splits_for_result(r)
-        if profile:
-            r.model.profile = self._get_profile_for_result(r)
+        if athlete:
+            r.model.athlete = self._get_athlete_for_result(r)
 
         return r
 
@@ -254,7 +256,7 @@ class ResultEnricher:
         :param logger: The logger instance
         :return: The splits
         """
-        self.logger.debug(f"fetching splits for '{r.model.name}'")
+        self.logger.debug(f"fetching splits for '{r.model.athlete.name}'")
         for i in range(self.retry):
             self.logger.debug(f"attempt {i}...")
             try:
@@ -265,13 +267,13 @@ class ResultEnricher:
 
         raise RuntimeError("maximum retries exceeded when querying splits")
 
-    def _get_profile_for_result(self, r: Result) -> HttpUrl:
+    def _get_athlete_for_result(self, r: Result) -> models.AthleteRef:
         """
-        Get the profile URL for a specified result.
+        Get the enriched athlete model fro a result.
         :param r: The result
-        :return: The profile URL
+        :return: The enriched athlete
         """
-        self.logger.debug(f"fetching profile URL for athlete '{r.model.name}'")
+        self.logger.debug(f"fetching athlete data for athlete '{r.model.athlete.name}'")
 
         res = requests.get(f"{r.model.url}?tab=overview")
         res.raise_for_status()
@@ -281,7 +283,13 @@ class ResultEnricher:
         if len(matches) == 0:
             raise RuntimeError("could not locate athlete profile URL")
 
-        return HttpUrl(f"{BASE_URL}{matches[0]}")
+        # build the athlete profile URL
+        url = HttpUrl(f"{BASE_URL}{matches[0]}")
+        # parse the profile URL to canonical name
+        parsed = os.path.basename(urllib.parse.urlparse(str(url)).path)
+        return models.AthleteRef(
+            name=r.model.athlete.name, canonical_name=parsed, profile_url=url
+        )
 
     def _try_get_splits(self, r: Result) -> models.Splits:
         """
@@ -346,7 +354,9 @@ class _Division:
         :param athlete: The name of the athlete
         :return: The ranking for the athlete, or `None`
         """
-        found = [r for r in self.results() if r.model.name.lower() == athlete.lower()]
+        found = [
+            r for r in self.results() if r.model.athlete.name.lower() == athlete.lower()
+        ]
         if len(found) < 1:
             raise ValueError(
                 f"athlete with name '{athlete}' not found in division '{self.model.name}'"

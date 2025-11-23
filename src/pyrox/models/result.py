@@ -91,15 +91,27 @@ class Splits(BaseModel):
         return json.dumps(data, indent=2)
 
 
+class AthleteRef(BaseModel):
+    """The model for an athlete reference."""
+
+    # the athlete's name
+    name: str
+    # the athlete's unique name
+    canonical_name: str | None = None
+    # the link to the athlete's profile
+    profile_url: HttpUrl | None = None
+
+
 class Result(BaseModel):
     """A result for a specific athlete, division, and event"""
+
+    # the athlete reference
+    athlete: AthleteRef
 
     # the finish position
     position: int
     # the age group finish position; some rankings do not report AG positions
     position_ag: int | None = None
-    # the athlete name
-    name: str
     # the athlete age group; some rankings do not report AG
     age_group: AgeGroup | None = None
     # finish time
@@ -109,5 +121,3 @@ class Result(BaseModel):
 
     # the splits for the race, if available / requested
     splits: Splits | None = None
-    # the athlete profile URL, if available / requested
-    profile: HttpUrl | None = None

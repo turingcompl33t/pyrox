@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup, Tag
 from pydantic import HttpUrl, ValidationError
 
 from pyrox.config import BASE_URL
-from pyrox.models import AgeGroup, Result
+from pyrox.models import AgeGroup, AthleteRef, Result
 
 from .base import BaseScraper
 
@@ -52,9 +52,9 @@ def _parse_row(tag: Tag) -> Result:
         raise ValueError("cannot parse division from row; missing data")
 
     return Result(
+        athlete=AthleteRef(name=_parse_name(data[3])),
         position=int(data[1].text),
         position_ag=_parse_position_nullable(data[2]),
-        name=_parse_name(data[3]),
         age_group=_parse_age_group(data[4]),
         time=_parse_time(data[5]),
         url=_parse_link(data[6]),
