@@ -14,8 +14,14 @@ dependencies = [
 ]
 
 [dependency-groups]
+analysis = [
+    "pandas>=2.3.3",
+    "plotnine>=0.15.1",
+    "scikit-misc>=0.5.2",
+    "statsmodels>=0.14.5",
+]
 qa = [
-    "black>=25.11.0",
+    "black[jupyter]>=25.11.0",
     "flake8>=7.3.0",
     "isort>=7.0.0",
     "mypy>=1.18.2",

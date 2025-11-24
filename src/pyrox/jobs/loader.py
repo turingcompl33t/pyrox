@@ -2,6 +2,7 @@
 Results loading jobs.
 """
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pyrox.models as models
@@ -25,7 +26,7 @@ class ResultsLoader:
         path: Path,
         athlete: bool = False,
         splits: bool = False,
-    ) -> None:
+    ) -> timedelta:
         """
         Load results from the specified event and division.
         :param event_name: The name of the event
@@ -33,7 +34,9 @@ class ResultsLoader:
         :param path: The path to which results are written
         :param athlete: Load with athlete data
         :param splits: Load with splits
+        :return: Duration of operation
         """
+        start = datetime.now()
         results = self.client.results(
             event_name,
             division_name,
@@ -43,6 +46,8 @@ class ResultsLoader:
 
         writer = ResultsWriter(event_name, division_name)
         writer.write([r.model for r in results], path)
+
+        return datetime.now() - start
 
 
 class MultiDivisionLoader:
@@ -61,7 +66,7 @@ class MultiDivisionLoader:
         path: Path,
         athlete: bool = False,
         splits: bool = False,
-    ) -> None:
+    ) -> timedelta:
         """
         Load results from the specified divisions at the specified event.
         :param event_name: The name of the event
@@ -69,7 +74,9 @@ class MultiDivisionLoader:
         :param path: The path to which results are written
         :param athlete: Load with athlete data
         :param splits: Load with splits
+        :param: Duration of operation
         """
+        start = datetime.now()
         # write results for all requested divisions
         for i, division_name in enumerate(division_names):
             try:
@@ -84,6 +91,8 @@ class MultiDivisionLoader:
 
             writer = ResultsWriter(event_name, division_name)
             writer.write([r.model for r in division_results], path, append=i > 0)
+
+        return datetime.now() - start
 
 
 class MultiEventLoader:
@@ -102,7 +111,7 @@ class MultiEventLoader:
         path: Path,
         athlete: bool = False,
         splits: bool = False,
-    ) -> None:
+    ) -> timedelta:
         """
         Load results from the specified divisions at the specified event.
         :param event_names: The names of the event
@@ -110,7 +119,9 @@ class MultiEventLoader:
         :param path: The path to which results are written
         :param athlete: Load with athlete data
         :param splits: Load with splits
+        :return: Duration of operation
         """
+        start = datetime.now()
         for i, event_name in enumerate(event_names):
             for j, division_name in enumerate(division_names):
                 try:
@@ -125,3 +136,5 @@ class MultiEventLoader:
 
                 writer = ResultsWriter(event_name, division_name)
                 writer.write([r.model for r in results], path, append=(i + j) > 0)
+
+        return datetime.now() - start
