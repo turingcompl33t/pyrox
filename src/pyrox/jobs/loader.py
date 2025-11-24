@@ -26,6 +26,8 @@ class ResultsLoader:
         path: Path,
         athlete: bool = False,
         splits: bool = False,
+        retry: int = 8,
+        poll_interval: timedelta = timedelta(seconds=1),
     ) -> timedelta:
         """
         Load results from the specified event and division.
@@ -42,6 +44,8 @@ class ResultsLoader:
             division_name,
             athlete=athlete,
             splits=splits,
+            retry=retry,
+            poll_interval=poll_interval,
         )
 
         writer = ResultsWriter(event_name, division_name)
@@ -66,6 +70,8 @@ class MultiDivisionLoader:
         path: Path,
         athlete: bool = False,
         splits: bool = False,
+        retry: int = 8,
+        poll_interval: timedelta = timedelta(seconds=1),
     ) -> timedelta:
         """
         Load results from the specified divisions at the specified event.
@@ -81,7 +87,12 @@ class MultiDivisionLoader:
         for i, division_name in enumerate(division_names):
             try:
                 division_results = self.client.results(
-                    event_name, division_name, athlete=athlete, splits=splits
+                    event_name,
+                    division_name,
+                    athlete=athlete,
+                    splits=splits,
+                    retry=retry,
+                    poll_interval=poll_interval,
                 )
             except RuntimeError:
                 self.logger.warning(
@@ -111,6 +122,8 @@ class MultiEventLoader:
         path: Path,
         athlete: bool = False,
         splits: bool = False,
+        retry: int = 8,
+        poll_interval: timedelta = timedelta(seconds=1),
     ) -> timedelta:
         """
         Load results from the specified divisions at the specified event.
@@ -126,7 +139,12 @@ class MultiEventLoader:
             for j, division_name in enumerate(division_names):
                 try:
                     results = self.client.results(
-                        event_name, division_name, athlete=athlete, splits=splits
+                        event_name,
+                        division_name,
+                        athlete=athlete,
+                        splits=splits,
+                        retry=retry,
+                        poll_interval=poll_interval,
                     )
                 except RuntimeError:
                     self.logger.warning(

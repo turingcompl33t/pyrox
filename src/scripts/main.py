@@ -16,7 +16,7 @@ def main() -> int:
     loader = MultiDivisionLoader(client)
     duration = loader.load(
         "chicago_2025",
-        {models.DivisionName.ELITE_MEN},
+        {models.DivisionName.ELITE_MEN, models.DivisionName.PRO_MEN},
         Path.cwd() / "results.csv",
         athlete=True,
         splits=True,
