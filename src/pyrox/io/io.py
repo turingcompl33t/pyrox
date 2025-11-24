@@ -97,6 +97,7 @@ def _write_header() -> list[str]:
         ]
         + headers_splits_run
         + header_splits_station
+        + ["roxzone"]
     )
 
 
@@ -139,6 +140,7 @@ def _row_to_result(row: dict[str, str]) -> models.Result:
             stations={
                 name: timedelta(seconds=int(row[name])) for name in models.Station
             },
+            roxzone=timedelta(seconds=int(row["roxzone"])),
         )
         if bool(row["has_splits"])
         else None
@@ -198,7 +200,7 @@ def _result_to_row(r: models.Result) -> list[str]:
 
     # athlete_name, athlete_canonical_name, athlete_profile_url,
     # ag, position, position_ag, finish_time,
-    # has_splits, ...run_splits..., ...station_splits...
+    # has_splits, ...run_splits..., ...station_splits..., roxzone
     return (
         [
             r.athlete.name,
@@ -221,4 +223,5 @@ def _result_to_row(r: models.Result) -> list[str]:
         ]
         + run_splits
         + station_splits
+        + [str(r.splits.roxzone.seconds) if r.splits is not None else str(0)]
     )

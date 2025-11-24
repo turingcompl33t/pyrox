@@ -54,9 +54,10 @@ class Splits(BaseModel):
 
     # the run splits for the race (8 in total)
     runs: Annotated[list[timedelta], Len(min_length=8, max_length=8)]
-
     # the station splits for the race
     stations: dict[Station, timedelta]
+    # total time spent in the roxzone
+    roxzone: timedelta
 
     @property
     def run_total(self) -> timedelta:
@@ -73,7 +74,7 @@ class Splits(BaseModel):
     @property
     def total_time(self) -> timedelta:
         """Get total time."""
-        return self.run_total + self.station_total
+        return self.run_total + self.station_total + self.roxzone
 
     def pretty(self) -> str:
         """Return a pretty JSON-string representation."""
@@ -87,6 +88,7 @@ class Splits(BaseModel):
                 str(name): humanize.precisedelta(split)
                 for name, split in self.stations.items()
             },
+            "roxzone": humanize.precisedelta(self.roxzone),
         }
         return json.dumps(data, indent=2)
 
