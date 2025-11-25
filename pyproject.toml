@@ -17,6 +17,7 @@ dependencies = [
 analysis = [
     "pandas>=2.3.3",
     "plotnine>=0.15.1",
+    "scikit-learn>=1.7.2",
     "scikit-misc>=0.5.2",
     "statsmodels>=0.14.5",
 ]
