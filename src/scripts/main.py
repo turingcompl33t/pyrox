@@ -16,11 +16,10 @@ def main() -> int:
     loader = MultiDivisionLoader(client)
     duration = loader.load(
         "chicago_2025",
-        {models.DivisionName.ELITE_WOMEN, models.DivisionName.PRO_WOMEN},
+        {models.DivisionName.ELITE_MEN, models.DivisionName.PRO_MEN},
         Path.cwd() / "results.csv",
         athlete=True,
         splits=True,
-        retry=16,
     )
     print(f"complete in {humanize.precisedelta(duration)}")
 
