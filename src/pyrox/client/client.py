@@ -10,7 +10,6 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta
 
-import requests
 from bs4 import BeautifulSoup
 from pydantic import HttpUrl
 
@@ -210,8 +209,7 @@ class Event:
         )
 
         # get the content from the event page
-        res = requests.get(str(self.model.url))
-        res.raise_for_status()
+        res = http.get(str(self.model.url))
 
         # scrape the divisions
         scraper = DivisionScraper(logging.getLogger(__name__))
@@ -277,8 +275,7 @@ class ResultEnricher:
         """
         self.logger.debug(f"fetching athlete data for athlete '{r.model.athlete.name}'")
 
-        res = requests.get(f"{r.model.url}?tab=overview")
-        res.raise_for_status()
+        res = http.get(f"{r.model.url}?tab=overview")
 
         soup = BeautifulSoup(res.content, "html.parser")
         matches = [a["href"] for a in soup.find_all("a") if "/athlete/" in a["href"]]
@@ -300,7 +297,7 @@ class ResultEnricher:
         :return: The splits
         """
         # grab the page
-        res = requests.get(f"{r.model.url}?tab=splits")
+        res = http.get(f"{r.model.url}?tab=splits")
         res.raise_for_status()
 
         # scrape the content
@@ -338,7 +335,7 @@ class _Division:
 
         rankings: list[Result] = []
         while True:
-            res = requests.get(f"{self.model.url}?p={p}")
+            res = http.get(f"{self.model.url}?p={p}")
             res.raise_for_status()
 
             scraped = s.scrape(BeautifulSoup(res.content, "html.parser"))
