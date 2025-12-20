@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 from pydantic import HttpUrl
 
+import pyrox.http.http as http
 import pyrox.models as models
 from pyrox.config import BASE_URL
 from pyrox.scrapers.division import DivisionScraper
@@ -39,8 +40,9 @@ class Hyrox:
         """
         self.logger.info("fetching all events")
 
-        res = requests.get("https://www.hyresult.com/events?tab=all")
-        res.raise_for_status()
+        res = http.get("https://www.hyresult.com/events?tab=all")
+        with open("out.html", "wb") as f:
+            f.write(res.content)
 
         scraper = EventScraper(self.logger)
         events = [
