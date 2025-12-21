@@ -1,11 +1,10 @@
+import json
 import logging
 import sys
 from datetime import datetime, timedelta
 
-from bs4 import BeautifulSoup
-
+from pyrox.client.client import Hyrox
 from pyrox.logging import create_logger
-from pyrox.scrapers.event import EventScraper
 
 
 def _date_range_for_race(race_date: datetime) -> tuple[datetime, datetime]:
@@ -22,21 +21,17 @@ def _date_range_for_race(race_date: datetime) -> tuple[datetime, datetime]:
 
 
 def main() -> int:
-    # client = Hyrox(create_logger(level=logging.DEBUG))
+    client = Hyrox(create_logger(level=logging.DEBUG))
 
-    # # Hyrox D.C. - elite race on March 6th, 2026
-    # race_date_dc = datetime(year=2026, month=3, day=6)
-    # begin, end = _date_range_for_race(race_date_dc)
+    # Hyrox D.C. - elite race on March 6th, 2026
+    race_date_dc = datetime(year=2026, month=3, day=6)
+    begin, end = _date_range_for_race(race_date_dc)
 
-    # events = client.events(after=begin, before=end)
-    # print(len(events))
-
-    scraper = EventScraper(create_logger(level=logging.DEBUG))
-    with open("out.html", "rb") as f:
-        data = f.read()
-
-    events = scraper.scrape(BeautifulSoup(data, "html.parser"))
-    print(len(events))
+    events = client.events()
+    # write in jsonlines format
+    with open("events.jsonl", "w") as f:
+        for e in events:
+            f.write(f"{json.dumps(e.model.model_dump(mode='json'))}\n")
 
     return 0
 

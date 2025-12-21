@@ -3,7 +3,6 @@ Scrape events from the events page.
 """
 
 import logging
-from datetime import datetime
 
 from bs4 import BeautifulSoup, Tag
 from pydantic import HttpUrl
@@ -35,9 +34,7 @@ class EventScraper(BaseScraper):
             link = _parse_link(card)  # type: ignore
 
             if name is not None and link is not None:
-                events.append(
-                    Event(name=name, date=datetime(year=2025, month=1, day=1), url=link)
-                )
+                events.append(Event(name=name, url=link))
 
         return events
 

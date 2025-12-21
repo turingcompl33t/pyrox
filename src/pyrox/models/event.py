@@ -4,7 +4,18 @@ Object model.
 
 from datetime import datetime
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
+
+from pyrox.models.division import Division
+
+
+class EventDetails(BaseModel):
+    """Details for a Hyrox event"""
+
+    # the date the event took place
+    date: datetime
+    # the divisions for the event
+    divisions: list[Division]
 
 
 class Event(BaseModel):
@@ -12,10 +23,13 @@ class Event(BaseModel):
 
     # the name of the event
     name: str
-    # the date the event took place
-    date: datetime
     # the link to the event page
     url: HttpUrl
+
+    # the details for the event
+    details: EventDetails = Field(
+        default_factory=lambda: EventDetails(date=datetime.now(), divisions=[])
+    )
 
     @property
     def canonical_name(self) -> str:

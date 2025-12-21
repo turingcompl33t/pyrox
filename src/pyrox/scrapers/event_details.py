@@ -8,26 +8,31 @@ from bs4 import BeautifulSoup, Tag
 from pydantic import HttpUrl, ValidationError
 
 from pyrox.config import BASE_URL
-from pyrox.models import Division, DivisionName
+from pyrox.models import Division, DivisionName, EventDetails
 
 from .base import BaseScraper
+from .event_details_date import EventDetailsDateScraper
 
 
-class DivisionScraper(BaseScraper):
-    """A class for scraping divisions."""
+class EventDetailsScraper(BaseScraper):
+    """A class for scraping event details."""
 
     def __init__(self, logger: logging.Logger) -> None:
         super().__init__(logger)
 
-    def scrape(self, soup: BeautifulSoup) -> list[Division]:
+    def scrape(self, soup: BeautifulSoup) -> EventDetails:
         """
-        Scrape and parse divisions.
-        :return: The collection of divisions
+        Scrape and parse event details.
+        :return: The event details
         """
+        # parse the date for the event
+        date_scraper = EventDetailsDateScraper(self.logger)
+        dt = date_scraper.scrape(soup)
+
         # find all of the row elements
         rows = soup.find_all("tr", class_="border-b")
         if len(rows) < 2:
-            return []
+            return EventDetails(date=dt, divisions=[])
 
         # the first row is the table header
         divisions: list[Division] = []
@@ -37,7 +42,8 @@ class DivisionScraper(BaseScraper):
             except (ValueError, ValidationError):
                 self.logger.warning("failed to parse division from row")
                 continue
-        return divisions
+
+        return EventDetails(date=dt, divisions=divisions)
 
 
 def _parse_row(tag: Tag) -> Division:
