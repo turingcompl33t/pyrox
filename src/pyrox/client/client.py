@@ -10,14 +10,14 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta
 
-import requests
 from bs4 import BeautifulSoup
 from pydantic import HttpUrl
 
+import pyrox.http.http as http
 import pyrox.models as models
 from pyrox.config import BASE_URL
-from pyrox.scrapers.division import DivisionScraper
 from pyrox.scrapers.event import EventScraper
+from pyrox.scrapers.event_details import EventDetailsScraper
 from pyrox.scrapers.result import ResultScraper
 from pyrox.scrapers.splits import SplitsScraper
 
@@ -39,21 +39,33 @@ class Hyrox:
         """
         self.logger.info("fetching all events")
 
-        res = requests.get("https://www.hyresult.com/events?tab=all")
-        res.raise_for_status()
+        res = http.get("https://www.hyresult.com/events?tab=all")
 
         scraper = EventScraper(self.logger)
-        events = [
-            Event(e, self.logger)
-            for e in scraper.scrape(BeautifulSoup(res.content, "html.parser"))
-        ]
 
-        self.logger.info(f"found {len(events)} events")
+        raw_events = scraper.scrape(BeautifulSoup(res.content, "html.parser"))
+        self.logger.info(f"found {len(raw_events)} events")
 
+        # enrich each event with event details; this is now necessary in order
+        # to sort events by date because dates no longer appear on the events page
+        event_details_scraper = EventDetailsScraper(self.logger)
+        for i, event in enumerate(raw_events):
+            res = http.get(str(event.url))
+            self.logger.debug(
+                f"[{i + 1} / {len(raw_events)}] scraping event details for {event.url}"
+            )
+            event.details = event_details_scraper.scrape(
+                BeautifulSoup(res.content, "html.parser")
+            )
+
+        # wrap the raw events in objects
+        events = [Event(model=e, logger=self.logger) for e in raw_events]
+
+        # filter the events by date
         if after is not None:
-            events = [e for e in events if e.model.date > after]
+            events = [e for e in events if e.model.details.date > after]
         if before is not None:
-            events = [e for e in events if e.model.date < before]
+            events = [e for e in events if e.model.details.date < before]
 
         self.logger.info(f"filtered to {len(events)} with date constraints")
         return events
@@ -127,7 +139,7 @@ class Event:
         )
 
         # get the requested division
-        division = self._division(division_name)
+        division = self.division(division_name)
         self.logger.info(f"found division '{division.model.name}'")
 
         # get the results from the division
@@ -175,7 +187,7 @@ class Event:
         )
 
         # get the requested division
-        division = self._division(division_name)
+        division = self.division(division_name)
 
         result = division.result(athlete_name)
         self.logger.info(f"found result for athlete '{athlete_name}'")
@@ -183,39 +195,26 @@ class Event:
         enricher = ResultEnricher(retry, poll_interval, self.logger)
         return enricher.enrich(result, athlete, splits) if splits or athlete else result
 
-    def _division(self, name: models.DivisionName) -> _Division:
+    def division(self, name: models.DivisionName) -> Division:
         """
         Get the division for the event with the specified name.
         :param name: The name of the division
         :raises: ValueError if division with name is not found
         :return: The division
         """
-        self.logger.info(
-            f"fetching division '{name}' at event '{self.model.canonical_name}'"
-        )
-        matches = [d for d in self._divisions() if d.model.name == name]
+        matches = [d for d in self.divisions() if d.model.name == name]
         if len(matches) < 1:
             raise ValueError(f"division with name '{name}' not found for event")
         return matches[0]
 
-    def _divisions(self) -> list[_Division]:
+    def divisions(self) -> list[Division]:
         """
         List the divisions for an event.
         :return: The list of divisions for the event
         """
-        self.logger.info(
-            f"fetching all divisions at event '{self.model.canonical_name}'"
-        )
-
-        # get the content from the event page
-        res = requests.get(str(self.model.url))
-        res.raise_for_status()
-
-        # scrape the divisions
-        scraper = DivisionScraper(logging.getLogger(__name__))
+        # wrap the division models in objects
         return [
-            _Division(d, self.logger)
-            for d in scraper.scrape(BeautifulSoup(res.content, "html.parser"))
+            Division(model=d, logger=self.logger) for d in self.model.details.divisions
         ]
 
 
@@ -275,8 +274,7 @@ class ResultEnricher:
         """
         self.logger.debug(f"fetching athlete data for athlete '{r.model.athlete.name}'")
 
-        res = requests.get(f"{r.model.url}?tab=overview")
-        res.raise_for_status()
+        res = http.get(f"{r.model.url}?tab=overview")
 
         soup = BeautifulSoup(res.content, "html.parser")
         matches = [a["href"] for a in soup.find_all("a") if "/athlete/" in a["href"]]
@@ -298,7 +296,7 @@ class ResultEnricher:
         :return: The splits
         """
         # grab the page
-        res = requests.get(f"{r.model.url}?tab=splits")
+        res = http.get(f"{r.model.url}?tab=splits")
         res.raise_for_status()
 
         # scrape the content
@@ -319,7 +317,7 @@ class Result:
 # -----------------------------------------------------------------------------
 
 
-class _Division:
+class Division:
     """A hyrox division."""
 
     def __init__(self, model: models.Division, logger: logging.Logger) -> None:
@@ -336,7 +334,7 @@ class _Division:
 
         rankings: list[Result] = []
         while True:
-            res = requests.get(f"{self.model.url}?p={p}")
+            res = http.get(f"{self.model.url}?p={p}")
             res.raise_for_status()
 
             scraped = s.scrape(BeautifulSoup(res.content, "html.parser"))
