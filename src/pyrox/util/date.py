@@ -19,3 +19,29 @@ def date_range_for_race(
     # begin date is the year prior to the cutoff date
     begin = end - timedelta(days=365)
     return begin, end
+
+
+def year_month_range(start: datetime, end: datetime) -> list[tuple[int, int]]:
+    """
+    Generate (year, month) tuples for all combinations in a date range.
+    :param start: The start date
+    :param end: The end date
+    :return: The sequence
+    """
+    if start > end:
+        raise ValueError("start must be <= end")
+
+    year, month = start.year, start.month
+
+    result = []
+    while (year, month) <= (end.year, end.month):
+        result.append((year, month))
+
+        # increment month
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+
+    return result

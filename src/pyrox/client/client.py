@@ -20,6 +20,7 @@ from pyrox.scrapers.event import EventScraper
 from pyrox.scrapers.event_details import EventDetailsScraper
 from pyrox.scrapers.result import ResultScraper
 from pyrox.scrapers.splits import SplitsScraper
+from pyrox.util.date import year_month_range
 
 
 class Hyrox:
@@ -28,23 +29,26 @@ class Hyrox:
     def __init__(self, logger: logging.Logger = logging.getLogger(__name__)) -> None:
         self.logger = logger
 
-    def events(
-        self, *, after: datetime | None = None, before: datetime | None = None
-    ) -> list[Event]:
+    def events(self, *, after: datetime, before: datetime) -> list[Event]:
         """
         Get all events, with an optional date range.
         :param: after: The beginning of the date range
         :param before: The end of the date range
         :return: A list of events
         """
-        self.logger.info("fetching all events")
+        self.logger.info(f"fetching events from {after} to {before}")
 
-        res = http.get("https://www.hyresult.com/events?tab=all")
+        # get the individual requests we need to cover the date range
+        requests = year_month_range(after, before)
+        self.logger.debug(f"identified {len(requests)} requests to cover date range")
 
-        scraper = EventScraper(self.logger)
-
-        raw_events = scraper.scrape(BeautifulSoup(res.content, "html.parser"))
-        self.logger.info(f"found {len(raw_events)} events")
+        # get raw events from all (year, month) combinations relevant to range
+        raw_events = [
+            e
+            for year, month in requests
+            for e in self._events_for_year_and_month(year, month)
+        ]
+        self.logger.info(f"scraped {len(raw_events)} raw events for date range")
 
         # enrich each event with event details; this is now necessary in order
         # to sort events by date because dates no longer appear on the events page
@@ -70,44 +74,74 @@ class Hyrox:
         self.logger.info(f"filtered to {len(events)} with date constraints")
         return events
 
-    def event(self, name: str) -> Event:
+    def _events_for_year_and_month(self, year: int, month: int) -> list[models.Event]:
         """
-        Get an event with name `name`.
-        :param name: The name of the event
-        :raises: ValueError if the event cannot be found
-        :return: The event
-        """
-        self.logger.info(f"querying event with name '{name}'")
-        matches = [
-            e
-            for e in self.events()
-            if e.model.canonical_name == models.Event.canonicalize(name)
-        ]
-        if len(matches) == 0:
-            raise ValueError(f"event with name '{name}' not found")
-        return matches[0]
+        Get events for a specified year and month.
 
-    def results(
-        self,
-        event_name: str,
-        division_name: models.DivisionName,
-        athlete: bool = False,
-        splits: bool = False,
-        retry: int = 8,
-        poll_interval: timedelta = timedelta(seconds=1),
-    ) -> list[Result]:
+        On Hyresult, events are now organized according to (year, month),
+        so we fetch them in groups in this structure, and then perform
+        day-level filtering at a higher level (the caller).
+
+        :param year: The year
+        :param month: The month (1-12)
+        :return: The events for the year and month
         """
-        Get results for the specified division at the specified event.
-        :param event_name: The name of the event
-        :param division_name: The name of the division
-        :param athlete: Enrich results with athlete profile data
-        :param splits: Enrich results with detailed splits data
-        :param retry: The number of retries for operations
-        :param poll_interval: The poll interval for operations
-        :return: The collection of results
-        """
-        event = self.event(event_name)
-        return event.results(division_name, athlete, splits, retry, poll_interval)
+        assert 1 <= month <= 12, "month must be on [1-12]"
+        self.logger.info(f"fetching events for year={year}, month={month}")
+
+        url = f"https://www.hyresult.com/events/{year}/{month:02d}"
+        self.logger.debug(f"fetching events with URL '{url}'")
+
+        # issue the request
+        res = http.get(url)
+
+        # scrape the events
+        scraper = EventScraper(self.logger)
+        events = scraper.scrape(BeautifulSoup(res.content, "html.parser"))
+
+        self.logger.debug(
+            f"scraped {len(events)} events for year={year}, month={month}"
+        )
+        return events
+
+    # def event(self, name: str) -> Event:
+    #     """
+    #     Get an event with name `name`.
+    #     :param name: The name of the event
+    #     :raises: ValueError if the event cannot be found
+    #     :return: The event
+    #     """
+    #     self.logger.info(f"querying event with name '{name}'")
+    #     matches = [
+    #         e
+    #         for e in self.events()
+    #         if e.model.canonical_name == models.Event.canonicalize(name)
+    #     ]
+    #     if len(matches) == 0:
+    #         raise ValueError(f"event with name '{name}' not found")
+    #     return matches[0]
+
+    # def results(
+    #     self,
+    #     event_name: str,
+    #     division_name: models.DivisionName,
+    #     athlete: bool = False,
+    #     splits: bool = False,
+    #     retry: int = 8,
+    #     poll_interval: timedelta = timedelta(seconds=1),
+    # ) -> list[Result]:
+    #     """
+    #     Get results for the specified division at the specified event.
+    #     :param event_name: The name of the event
+    #     :param division_name: The name of the division
+    #     :param athlete: Enrich results with athlete profile data
+    #     :param splits: Enrich results with detailed splits data
+    #     :param retry: The number of retries for operations
+    #     :param poll_interval: The poll interval for operations
+    #     :return: The collection of results
+    #     """
+    #     event = self.event(event_name)
+    #     return event.results(division_name, athlete, splits, retry, poll_interval)
 
 
 class Event:

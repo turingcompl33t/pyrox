@@ -1,5 +1,5 @@
 """
-Scrape events from the events page.
+Scrape events from an events page.
 """
 
 import logging
@@ -24,14 +24,17 @@ class EventScraper(BaseScraper):
         Scrape and parse events.
         :return: The collection of events
         """
-        # find all of the card elements for each event on the page
-        cards = [a for a in soup.find_all("a") if a["href"].startswith("/event/")]  # type: ignore
-        self.logger.info(f"found {len(cards)} event cards")
+        # event cards contain an HREF to event page that starts with the
+        # season identifier for the event - this is somewhat brittle...
+        anchors = soup.find_all(
+            "a", href=lambda h: h is not None and h.startswith("/event/s")
+        )
+        self.logger.debug(f"found {len(anchors)} event cards")
 
         events: list[Event] = []
-        for card in cards:
-            name = _parse_name(card.find("h2"))
-            link = _parse_link(card)  # type: ignore
+        for anchor in anchors:
+            name = _parse_name(anchor.find("h2"))
+            link = _parse_link(anchor)
 
             if name is not None and link is not None:
                 events.append(Event(name=name, url=link))
@@ -54,4 +57,5 @@ def _parse_link(tag: Tag | None) -> HttpUrl | None:
     :param tag: The input tag
     :return: The parsed link, or `None`
     """
-    return HttpUrl(f"{BASE_URL}/{tag['href']}") if tag is not None else None
+    # the relative link includes a leading '/'
+    return HttpUrl(f"{BASE_URL}{tag['href']}") if tag is not None else None
