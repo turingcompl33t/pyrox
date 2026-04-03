@@ -1,3 +1,3 @@
-from .client import Hyrox
+from .client import Event, Hyrox
 
-__all__ = ["Hyrox"]
+__all__ = ["Hyrox", "Event"]

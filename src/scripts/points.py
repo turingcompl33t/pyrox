@@ -5,21 +5,19 @@ Points calculator for new (2026-2027) scoring system.
 import logging
 import sys
 from datetime import datetime
+from pathlib import Path
 
-from pyrox.client.client import Hyrox
+from pyrox.jobs.scorer import Scorer
 from pyrox.logging import create_logger
 
 
 def main() -> int:
-    client = Hyrox(create_logger(level=logging.DEBUG))
+    scorer = Scorer(Path.cwd() / "cache", create_logger(level=logging.DEBUG))
 
     after = datetime(year=2026, month=3, day=25)
     before = datetime(year=2026, month=4, day=1)
 
-    events = client.events(before=before, after=after)
-    print(f"found {len(events)} events")
-    for e in events:
-        print(e.model.canonical_name)
+    scorer.score(after, before)
 
     # # write in jsonlines format
     # with open("events.jsonl", "w") as f:
