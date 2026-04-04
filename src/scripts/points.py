@@ -2,27 +2,29 @@
 Points calculator for new (2026-2027) scoring system.
 """
 
+import json
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
+import pyrox.models as models
 from pyrox.jobs.scorer import Scorer
 from pyrox.logging import create_logger
 
 
 def main() -> int:
-    scorer = Scorer(Path.cwd() / "cache", create_logger(level=logging.DEBUG))
+    # a map that defines the event types (e.g. regionals, majors)
+    event_map = {}
+    # the scorer instance
+    scorer = Scorer(Path.cwd() / "cache", event_map, create_logger(level=logging.DEBUG))
 
     after = datetime(year=2026, month=3, day=25)
     before = datetime(year=2026, month=4, day=1)
 
-    scorer.score(after, before)
-
-    # # write in jsonlines format
-    # with open("events.jsonl", "w") as f:
-    #     for e in events:
-    #         f.write(f"{json.dumps(e.model.model_dump(mode='json'))}\n")
+    # compute the scoring
+    points = scorer.score(models.Gender.MALE, models.Race.SINGLES, after, before)
+    print(json.dumps(points, indent=2))
 
     return 0
 

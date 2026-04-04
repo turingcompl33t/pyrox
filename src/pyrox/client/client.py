@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from bs4 import BeautifulSoup
 from pydantic import HttpUrl
+from requests import HTTPError
 
 import pyrox.http.http as http
 import pyrox.models as models
@@ -177,22 +178,10 @@ class Event:
         self.logger.info(f"found division '{division.model.name}'")
 
         # get the results from the division
-        results = division.results()
+        results = division.results(
+            athlete=athlete, splits=splits, retry=retry, poll_interval=poll_interval
+        )
         self.logger.info(f"fetched {len(results)} results for division")
-
-        if splits or athlete:
-            enricher = ResultEnricher(retry, poll_interval, self.logger)
-            for i, result in enumerate(results):
-                self.logger.info(
-                    f"[{i + 1} / {len(results)}] enriching result for athlete '{result.model.athlete.name}'"
-                )
-                try:
-                    result = enricher.enrich(result, athlete, splits)
-                except RuntimeError as e:
-                    self.logger.warning(
-                        f"failed to enrich result for athlete '{result.model.athlete.name}': {e}"
-                    )
-                    continue
 
         return results
 
@@ -294,7 +283,7 @@ class ResultEnricher:
             self.logger.debug(f"attempt {i}...")
             try:
                 return self._try_get_splits(r)
-            except ValueError:
+            except (ValueError, HTTPError):
                 time.sleep(self.poll_interval.seconds)
                 continue
 
@@ -306,8 +295,39 @@ class ResultEnricher:
         :param r: The result
         :return: The enriched athlete
         """
-        self.logger.debug(f"fetching athlete data for athlete '{r.model.athlete.name}'")
+        self.logger.debug(
+            f"fetching athlete data for athlete '{r.model.athlete.name}'..."
+        )
+        for i in range(self.retry):
+            self.logger.debug(f"attempt {i}...")
+            try:
+                return self._try_get_athlete(r)
+            except HTTPError:
+                time.sleep(self.poll_interval.seconds)
+                continue
 
+        raise RuntimeError("maximum retries exceeded when querying athlete data")
+
+    def _try_get_splits(self, r: Result) -> models.Splits:
+        """
+        Try and query splits for a specified result.
+        :param r: The result
+        :return: The splits
+        """
+        # grab the page
+        res = http.get(f"{r.model.url}?tab=splits")
+
+        # scrape the content
+        scraper = SplitsScraper(logging.getLogger(__name__))
+        return scraper.scrape(BeautifulSoup(res.content, "html.parser"))
+
+    def _try_get_athlete(self, r: Result) -> models.AthleteRef:
+        """
+        Try and get athlete data for the specified result.
+        :param r: The result
+        :return: The athlete reference
+        """
+        # grab the page
         res = http.get(f"{r.model.url}?tab=overview")
 
         soup = BeautifulSoup(res.content, "html.parser")
@@ -323,20 +343,6 @@ class ResultEnricher:
             name=r.model.athlete.name, canonical_name=parsed, profile_url=url
         )
 
-    def _try_get_splits(self, r: Result) -> models.Splits:
-        """
-        Try and query splits for a specified result.
-        :param r: The result
-        :return: The splits
-        """
-        # grab the page
-        res = http.get(f"{r.model.url}?tab=splits")
-        res.raise_for_status()
-
-        # scrape the content
-        scraper = SplitsScraper(logging.getLogger(__name__))
-        return scraper.scrape(BeautifulSoup(res.content, "html.parser"))
-
 
 class Result:
     """A Hyrox result."""
@@ -346,11 +352,6 @@ class Result:
         self.logger = logger
 
 
-# -----------------------------------------------------------------------------
-# Private Classes
-# -----------------------------------------------------------------------------
-
-
 class Division:
     """A hyrox division."""
 
@@ -358,36 +359,81 @@ class Division:
         self.model = model
         self.logger = logger
 
-    def results(self) -> list[Result]:
+    def results(
+        self,
+        limit: int = -1,
+        athlete: bool = False,
+        splits: bool = False,
+        retry: int = 8,
+        poll_interval: timedelta = timedelta(seconds=1),
+    ) -> list[Result]:
         """
         List the rankings for a division.
-        :return: The list of rankings
+        :param limit: Limit the number of results queried
+        :param athlete: Enrich results with athlete profile data
+        :param splits: Enrich results with detailed splits data
+        :param retry: The number of retries for operations
+        :param poll_interval: The poll interval for operations
+        :return: The list of results
         """
         p = 1
-        s = ResultScraper(logging.getLogger(__name__))
+        s = ResultScraper(self.logger)
 
-        rankings: list[Result] = []
+        results: list[Result] = []
         while True:
             res = http.get(f"{self.model.url}?p={p}")
-            res.raise_for_status()
 
             scraped = s.scrape(BeautifulSoup(res.content, "html.parser"))
             if len(scraped) == 0:
                 break
 
-            rankings.extend([Result(r, self.logger) for r in scraped])
+            results.extend([Result(r, self.logger) for r in scraped])
             p += 1
 
-        return rankings
+            # break early if limit reached
+            if limit > -1 and len(results) >= limit:
+                break
 
-    def result(self, athlete: str) -> Result:
+        # enrich results
+        if splits or athlete:
+            enricher = ResultEnricher(retry, poll_interval, self.logger)
+            for i, result in enumerate(results):
+                self.logger.debug(
+                    f"[{i + 1} / {len(results)}] enriching result for athlete '{result.model.athlete.name}'"
+                )
+                try:
+                    result = enricher.enrich(result, athlete, splits)
+                except RuntimeError as e:
+                    self.logger.warning(
+                        f"failed to enrich result for athlete '{result.model.athlete.name}': {e}"
+                    )
+                    continue
+
+        return results
+
+    def result(
+        self,
+        athlete_name: str,
+        athlete: bool = False,
+        splits: bool = False,
+        retry: int = 8,
+        poll_interval: timedelta = timedelta(seconds=1),
+    ) -> Result:
         """
         Find the ranking for a specific athlete.
-        :param athlete: The name of the athlete
+        :param athlete_name: The name of the athlete
+        :param athlete: Enrich results with athlete profile data
+        :param splits: Enrich results with detailed splits data
+        :param retry: The number of retries for operations
+        :param poll_interval: The poll interval for operations
         :return: The ranking for the athlete, or `None`
         """
         found = [
-            r for r in self.results() if r.model.athlete.name.lower() == athlete.lower()
+            r
+            for r in self.results(
+                athlete=athlete, splits=splits, retry=retry, poll_interval=poll_interval
+            )
+            if r.model.athlete.name.lower() == athlete_name.lower()
         ]
         if len(found) < 1:
             raise ValueError(
